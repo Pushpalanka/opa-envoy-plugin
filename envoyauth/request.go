@@ -2,7 +2,6 @@ package envoyauth
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"io"
 	"mime"
@@ -28,44 +27,32 @@ var v3Info = map[string]string{"ext_authz": "v3", "encoding": "protojson"}
 
 // RequestToInput - Converts a CheckRequest in either protobuf 2 or 3 to an input map
 func RequestToInput(req interface{}, logger logging.Logger, protoSet *protoregistry.Files, skipRequestBodyParse bool) (map[string]interface{}, error) {
-	var err error
-	var input map[string]interface{}
+	input := make(map[string]interface{})
 
-	var bs, rawBody []byte
+	var rawBody []byte
 	var path, body string
 	var headers, version map[string]string
 
-	// NOTE: The path/body/headers blocks look silly, but they allow us to retrieve
-	//       the parts of the incoming request we care about, without having to convert
-	//       the entire v2 message into v3. It's nested, each level has a different type,
-	//       etc -- we only care for its JSON representation as fed into evaluation later.
 	switch req := req.(type) {
 	case *ext_authz_v3.CheckRequest:
-		bs, err = protojson.Marshal(req)
-		if err != nil {
-			return nil, err
-		}
 		path = req.GetAttributes().GetRequest().GetHttp().GetPath()
 		body = req.GetAttributes().GetRequest().GetHttp().GetBody()
 		headers = req.GetAttributes().GetRequest().GetHttp().GetHeaders()
 		rawBody = req.GetAttributes().GetRequest().GetHttp().GetRawBody()
 		version = v3Info
 	case *ext_authz_v2.CheckRequest:
-		bs, err = json.Marshal(req)
-		if err != nil {
-			return nil, err
-		}
 		path = req.GetAttributes().GetRequest().GetHttp().GetPath()
 		body = req.GetAttributes().GetRequest().GetHttp().GetBody()
 		headers = req.GetAttributes().GetRequest().GetHttp().GetHeaders()
 		version = v2Info
+	default:
+		return nil, fmt.Errorf("unsupported request type")
 	}
 
-	err = util.UnmarshalJSON(bs, &input)
-	if err != nil {
-		return nil, err
-	}
 	input["version"] = version
+	input["path"] = path
+	input["body"] = body
+	input["headers"] = headers
 
 	parsedPath, parsedQuery, err := getParsedPathAndQuery(path)
 	if err != nil {
